@@ -1,0 +1,69 @@
+global iterations
+global msg_types
+global msg_count
+
+
+function get_msg_type(type) {
+  if (type>=0 && type<9)
+    return msg_types[type]
+  else
+    return sprintf("unkown msg (%d)", type)
+}
+
+
+function make_msg_types() {
+  msg_types[0] = "ping"
+  msg_types[1] = "pong"
+  msg_types[2] = "meet"
+  msg_types[3] = "fail"
+  msg_types[4] = "publish"
+  msg_types[5] = "failover-request"
+  msg_types[6] = "failover-ack"
+  msg_types[7] = "update"
+  msg_types[8] = "mfstart"
+}
+
+
+probe begin {
+  make_msg_types()
+}
+
+
+probe process("/usr/local/bin/redis-server").function("clusterProcessPacket") {
+  pid = pid()
+  port = @var("server")->port
+  type = ntohs(@cast($link->rcvbuf, "clusterMsg")->type)
+  if (type!=0 && type!=1) {
+    printf("%d(%d)  <- %s\n", port, pid, get_msg_type(type))
+  }
+
+  msg_count[port,pid] += 1
+}
+
+
+probe process("/usr/local/bin/redis-server").function("clusterSendMessage") {
+  type = ntohs(@cast($msg, "clusterMsg")->type)
+  if (type!=0 && type!=1) {
+    port = @var("server")->port
+    printf("%d(%d) -> %s\n", port, pid(), get_msg_type(type))
+  }
+}
+
+
+probe process("/usr/local/bin/redis-server").function("clusterCron") {
+  port = @var("server")->port
+  iterations[port,pid()] <<< $iteration
+}
+
+
+probe end {
+  foreach ([port,pid] in iterations-) {
+    printf("redis-server %d (%d), msg receive %d\n",
+        pid, @count(iterations[port,pid]), msg_count[port,pid])
+  }
+
+  delete iterations
+  delete msg_types
+  delete msg_count
+}
+
