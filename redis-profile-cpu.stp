@@ -1,0 +1,45 @@
+#! /usr/bin/env stap
+# Copyleft (C) KRT, 2014 by kiterunner_t
+#
+# stap --ldd -d /home/krt/work/github/kredis/src/redis-server -s 32 -D MAXBACKTRACE=100 -D MAXSTRINGLEN=4096 -D MAXMAPENTRIES=10240 -D MAXACTION=1000 -v --all-modules redis-profile-cpu.stp redis-server 30 > redis-profile-cpu.txt
+# ./stackcollapse-stap.pl p2.txt | ./flamegraph.pl > redis-profile-cpu.svg
+
+global s
+global progname
+global wait_time
+
+
+probe begin {
+  progname = @1
+  wait_time = $2
+}
+
+
+probe timer.profile {
+  if (execname() == progname) {
+    usr = sprint_ubacktrace()
+    s[usr] <<< 1
+
+/*
+    len = strlen(usr)
+    if (len > 1024)
+      printf("len-> %d\n", strlen(usr))
+*/
+  }
+}
+
+
+probe timer.s(wait_time) {
+  exit()
+}
+
+
+probe end {
+  foreach (usr in s+) {
+    printf("%s\n", usr)
+    printf("\t%d\n", @count(s[usr]))
+  }
+
+  delete s
+}
+

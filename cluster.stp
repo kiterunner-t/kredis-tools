@@ -1,6 +1,11 @@
+#! /usr/bin/env stap
+# Copyleft (C) KRT, 2014 by kiterunner_t
+
 global iterations
 global msg_types
 global msg_count
+
+@define PROGPATH %( "/home/krt/work/github/kredis/src/redis-server" %)
 
 
 function get_msg_type(type) {
@@ -29,10 +34,10 @@ probe begin {
 }
 
 
-probe process("/usr/local/bin/redis-server").function("clusterProcessPacket") {
+probe process(@PROGPATH).function("clusterProcessPacket") {
   pid = pid()
   port = @var("server")->port
-  type = ntohs(@cast($link->rcvbuf, "clusterMsg")->type)
+  type = @cast($link->rcvbuf, "clusterMsg")->type
   if (type!=0 && type!=1) {
     printf("%d(%d)  <- %s\n", port, pid, get_msg_type(type))
   }
@@ -41,8 +46,10 @@ probe process("/usr/local/bin/redis-server").function("clusterProcessPacket") {
 }
 
 
-probe process("/usr/local/bin/redis-server").function("clusterSendMessage") {
-  type = ntohs(@cast($msg, "clusterMsg")->type)
+probe process(@PROGPATH).function("clusterSendMessage") {
+  # type = ntohs(@cast($msg, "clusterMsg")->type)
+  # in my fork, msg is host byte order, so ntohs is not necessary
+  type = @cast($msg, "clusterMsg")->type
   if (type!=0 && type!=1) {
     port = @var("server")->port
     printf("%d(%d) -> %s\n", port, pid(), get_msg_type(type))
@@ -50,7 +57,7 @@ probe process("/usr/local/bin/redis-server").function("clusterSendMessage") {
 }
 
 
-probe process("/usr/local/bin/redis-server").function("clusterCron") {
+probe process(@PROGPATH).function("clusterCron") {
   port = @var("server")->port
   iterations[port,pid()] <<< $iteration
 }
